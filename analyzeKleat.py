@@ -340,9 +340,7 @@ def genSponge(gtf, reference, delim='|'):
     used = set()
     for region in gtf:
         line = ('\t').join([region.seqname, str(region.start), str(region.end)])
-        if line in used:
-            continue
-        if region.seqname not in valid_chroms:
+        if (line in used) or (region.seqname not in valid_chroms) or (region.end <= region.start):
             continue
         used.add(line)
         header = (delim).join(['>sponge', region.attribute['gene_name'], region.seqname, str(region.start), str(region.end)])
