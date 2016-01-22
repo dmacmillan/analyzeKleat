@@ -539,13 +539,15 @@ if __name__ == "__main__":
     index_path = utr3_fasta_path + '.idx'
 
     if not os.path.isfile(index_path):
-        index = kallistoIndex(args.kallisto, fasta_path)
+        index = kallistoIndex(args.kallisto, utr3_fasta_path)
         if args.debug:
             sys.stdout.write('Indexing {}...'.format(utr3_fasta_path))
         o,e = index.communicate()
         if args.debug:
             print 'DONE'
             print 'Index written to: {}'.format(index_path)
+            writeFile(args.outdir, 'kallisto.index.o', o)
+            writeFile(args.outdir, 'kallisto.index.e', e)
 
     for i in xrange(len(config['r1s'])):
         quant = kallistoQuant(args.kallisto, index_path, args.outdir, config['r1s'][i], config['r2s'][i], bias=True, bootstrap=args.bootstrap, threads=args.threads)
