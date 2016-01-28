@@ -248,12 +248,14 @@ def mergeGTFList(gtf_list):
 def genFa(clusters, gtf, ref, min_len=20, cap_size=100, delim='|'):
     result = ''
     regions = ''
+    intervals = ''
     for chrom in gtf:
         if chrom not in clusters:
             continue
         for gene in gtf[chrom]:
             if gene not in clusters[chrom]:
                 continue
+            strand = gtf[chrom][gene][0].strand
             for region in gtf[chrom][gene]:
                 cleaved = False
                 last = region.start
@@ -265,24 +267,28 @@ def genFa(clusters, gtf, ref, min_len=20, cap_size=100, delim='|'):
                         cleaved = True
                         result += (delim).join(['>utr3', gene, chrom, str(last), str(cs)]) + '\n'
                         result += reference.fetch(chrom, last, cs).upper() + '\n'
-                        regions += ('\t').join([chrom, str(last), str(cs), gene]) + '\n'
+                        regions += ('\t').join([chrom, str(last), str(cs), gene, '0', strand]) + '\n'
+                        intervals += ('\t').join([(delim).join(['utr3', gene, chrom, str(last), str(cs)]), '1', str(cs-last), strand]) + '\n'
                         last = cs+1
                 if (region.end - last >= min_len) and cleaved:
                     result += (delim).join(['>utr3', gene, chrom, str(last), str(region.end)]) + '\n'
                     result += reference.fetch(chrom, last, region.end).upper() + '\n'
-                    regions += ('\t').join([chrom, str(last), str(region.end), gene]) + '\n'
+                    regions += ('\t').join([chrom, str(last), str(region.end), gene, '0', strand]) + '\n'
+                    intervals += ('\t').join([(delim).join(['utr3', gene, chrom, str(last), str(region.end)]), '1', str(region.end-last), strand]) + '\n'
             # Capture window after/before end of utr3
-            if gtf[chrom][gene][0].strand == '+':
+            if strand == '+':
                 last_exon = gtf[chrom][gene][-1]
                 result += (delim).join(['>utr3', gene, last_exon.seqname, str(last_exon.end), str(last_exon.end + cap_size)]) + '\n'
                 result += reference.fetch(last_exon.seqname, last_exon.start, last_exon.end + cap_size).upper() + '\n'
-                regions += ('\t').join([last_exon.seqname, str(last_exon.end), str(last_exon.end + cap_size), gene]) + '\n'
+                regions += ('\t').join([last_exon.seqname, str(last_exon.end), str(last_exon.end + cap_size), gene, '0', strand]) + '\n'
+                intervals += ('\t').join([(delim).join(['utr3', gene, last_exon.seqname, str(last_exon.end), str(last_exon.end + cap_size)]), '1', '100', strand]) + '\n'
             else:
                 last_exon = gtf[chrom][gene][0]
                 result += (delim).join(['>cap3', gene, last_exon.seqname, str(last_exon.start - cap_size), str(last_exon.start)]) + '\n'
                 result += reference.fetch(last_exon.seqname, last_exon.start - cap_size, last_exon.end).upper() + '\n'
-                regions += ('\t').join([last_exon.seqname, str(last_exon.start - cap_size), str(last_exon.start), gene]) + '\n'
-    return result.strip(), regions.strip()
+                regions += ('\t').join([last_exon.seqname, str(last_exon.start - cap_size), str(last_exon.start), gene, '0' , strand]) + '\n'
+                intervals += ('\t').join([(delim).join(['cap3', gene, last_exon.seqname, str(last_exon.start - cap_size), str(last_exon.start)]), '1', '100', strand]) + '\n'
+    return result.strip(), regions.strip(), intervals.strip()
                 
 def writeFile(path, name=None, *lines):
     if name:
@@ -322,6 +328,13 @@ def kallistoQuant(kallisto_path, index_path, out_path, reads_1, reads_2, bias=Fa
     expression = subprocess.Popen(expression_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return expression
 
+def indexFa(fasta_path):
+    try:
+        subprocess.call('samtools faidx {}'.format(fasta_path).split())
+    except FileNotFoundError:
+        return '**WARNING**: Could not locate samtools, unable to index {}'.format(fasta_path)
+    return True
+
 def groupKleat(parsed):
     results = {}
     for r in parsed:
@@ -339,11 +352,11 @@ def genSponge(gtf, reference, delim='|'):
     valid_chroms = ['chr'+str(x) for x in range(1,24)]
     used = set()
     for region in gtf:
-        line = ('\t').join([region.seqname, str(region.start), str(region.end)])
+        line = ('\t').join([region.seqname, str(region.start), str(region.end), region.attribute['gene_name'], '0', region.strand])
         if (line in used) or (region.seqname not in valid_chroms) or (region.end <= region.start):
             continue
         used.add(line)
-        header = (delim).join(['>sponge', region.attribute['gene_name'], region.seqname, str(region.start), str(region.end)])
+        header = (delim).join(['>sponge', region.attribute['gene_name'], region.seqname, str(region.start), str(region.end), '0', region.strand])
         result.append(header)
         result.append(reference.fetch(region.seqname, region.start, region.end).upper())
         regions.append(line)
@@ -429,24 +442,25 @@ def kleatLinkage(sites, window=20):
     return sites
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Take results from KLEAT and generate fasta sequences for 3\'UTR isoforms.')
+    parser = argparse.ArgumentParser(description='Take results from KLEAT and generate fasta sequences for 3\'UTR isoforms')
     
-    parser.add_argument('config', help='A configuration file containing paths to kleat outputs, and reads for each dataset.')
+    parser.add_argument('config', help='A configuration file containing paths to kleat outputs, and reads for each dataset')
     parser.add_argument('-features', default='/projects/dmacmillanprj2/polya/encode/analysis/fasta_generation/analyzeKleat/Homo_sapiens.GRCh37.75.gtf', help='A file containing genomic features in GTF format (Can be downloaded from Ensembl)')
     parser.add_argument('-gene_names', default='/home/dmacmillan/annotations/ensembl/ensemblToGeneName.original', help='A two column TSV file with annotation labels on the left and corresponding gene names on the right. If header is present, it must start with a \# sign')
     parser.add_argument('-reference', default='/home/dmacmillan/references/hg19/hg19.fa', help='Reference genome in fasta format (index must be in same folder). Default is \'/home/dmacmillan/references/hg19/hg19.fa\'')
     parser.add_argument('-kallisto', default='/gsc/btl/linuxbrew/bin/kallisto', help='Path to Kallisto executable. Default is \'/gsc/btl/linuxbrew/bin/kallisto\'')
-    parser.add_argument('-de', '--delim', default='|', help='Set the delimiter for headers in fasta files. This should be a character that is not contained within any gene names, transcript id\'s, or other names. Default is \'|\' neglecting surrounding quotations.')
-    parser.add_argument('-cw', '--cluster_window', type=int, default=20, help='Set the window size for clustering KLEAT cleavage sites. Default = 20.')
+    parser.add_argument('-de', '--delim', default='|', help='Set the delimiter for headers in fasta files. This should be a character that is not contained within any gene names, transcript id\'s, or other names. Default is \'|\' neglecting surrounding quotations')
+    parser.add_argument('-cw', '--cluster_window', type=int, default=20, help='Set the window size for clustering KLEAT cleavage sites. Default = 20')
     parser.add_argument('-d', '--debug', action='store_true', help='Print detailed debugging information')
-    parser.add_argument('-m', '--min_seq_len', type=int, default=20, help='The minimum length of sequence to be output in the fasta file. Default is 20.')
+    parser.add_argument('-m', '--min_seq_len', type=int, default=20, help='The minimum length of sequence to be output in the fasta file. Default is 20')
     #parser.add_argument('-n', '--name', default=None, help='Name for dataset. Default will be the basename of all -ks arguments delimited by the --delim parameter.')
-    parser.add_argument('-b', '--bootstrap', default='100', help='Bootstrap parameter for Kallisto. Default = 100.')
-    parser.add_argument('-t', '--threads', default='8', help='Number of threads to use for Kallisto. Default = 8.')
-    parser.add_argument('-c', '--cap_size', type=int, default=100, help='Length of region 3\'-adjacent to 3\'UTR to capture. Default = 100.')
-    parser.add_argument('-mbrtl', '--min_bridge_read_tail_len', type=int, default=2, help='Disregard KLEAT calls which have a maximum bridge read tail length less than this number.')
+    parser.add_argument('-bi', '--bias', action='store_false', help='Bias parameter for Kallisto, enabled by default. Use this flag to disable')
+    parser.add_argument('-bo', '--bootstrap', default='100', help='Bootstrap parameter for Kallisto. Default = 100')
+    parser.add_argument('-t', '--threads', default='8', help='Number of threads to use for Kallisto. Default = 8')
+    parser.add_argument('-c', '--cap_size', type=int, default=100, help='Length of region 3\'-adjacent to 3\'UTR to capture. Default = 100')
+    parser.add_argument('-mbrtl', '--min_bridge_read_tail_len', type=int, default=2, help='Disregard KLEAT calls which have a maximum bridge read tail length less than this number. Default is 2')
     parser.add_argument('-mnbr', '--min_num_bridge_reads', type=int, default=2, help='Disregard KLEAT calls which have a number of bridge reads less than this number. Default is 2')
-    parser.add_argument('-o', '--outdir', default=os.getcwd(), help='Directory to output to. Default is current directory.')
+    parser.add_argument('-o', '--outdir', default=os.getcwd(), help='Directory to output to. Default is current directory')
 
     args = parser.parse_args()
 
@@ -514,7 +528,7 @@ if __name__ == "__main__":
         print 'DONE'
     if args.debug:
         sys.stdout.write('Generating 3\'UTR regions...')
-    utr3_fasta, utr3_regions = genFa(grouped, ggtf, reference, cap_size=args.cap_size)
+    utr3_fasta, utr3_regions, utr3_intervals = genFa(grouped, ggtf, reference, cap_size=args.cap_size, delim=args.delim)
     utr3_regions = genTrackLine('3\'UTRs', description='3\'UTR sequences', color='50,50,255') + utr3_regions
     if args.debug:
         print 'DONE'
@@ -525,16 +539,23 @@ if __name__ == "__main__":
     if args.debug:
         print 'DONE'
     
+    utr3_intervals_path = os.path.join(args.outdir, 'utr3_intervals')
     sponge_regions_path = os.path.join(args.outdir, 'sponge_regions.bed')
     utr3_fasta_path = os.path.join(args.outdir, 'utr3_regions.fa')
     utr3_regions_path = os.path.join(args.outdir, 'utr3_regions.bed')
     writeFile(utr3_fasta_path, None, utr3_fasta, sponge_fasta)
     writeFile(utr3_regions_path, None, utr3_regions)
     writeFile(sponge_regions_path, None, sponge_regions)
+    writeFile(utr3_intervals_path, None, utr3_intervals)
     if args.debug:
         print '3\'UTR fasta file written to: {}'.format(utr3_fasta_path)
         print '3\'UTR regions file written to: {}'.format(utr3_regions_path)
         print 'Sponge regions file written to: {}'.format(sponge_regions_path)
+
+    if args.debug:
+        print 'samtools faidx {}...'.format(utr3_fasta_path)
+    res = indexFa(utr3_fasta_path)
+    print res
 
     index_path = utr3_fasta_path + '.idx'
 
@@ -549,8 +570,11 @@ if __name__ == "__main__":
             writeFile(args.outdir, 'kallisto.index.o', o)
             writeFile(args.outdir, 'kallisto.index.e', e)
 
+    sys.exit()
+
     for i in xrange(len(config['r1s'])):
-        quant = kallistoQuant(args.kallisto, index_path, args.outdir, config['r1s'][i], config['r2s'][i], bias=True, bootstrap=args.bootstrap, threads=args.threads)
+        sample = config['kleats'][i].split('.')[0]
+        quant = kallistoQuant(args.kallisto, index_path, args.outdir, config['r1s'][i], config['r2s'][i], bias=args.bias, bootstrap=args.bootstrap, threads=args.threads)
         if args.debug:
             print 'Quantifying...'
         quant = quant.communicate()
@@ -559,3 +583,7 @@ if __name__ == "__main__":
         abundance_path = os.path.join(args.outdir, 'abundance.tsv')
         rename = os.path.join(args.outdir, os.path.basename(config['kleats'][i]).split('.')[0] + '.tsv')
         os.rename(abundance_path, rename)
+#        with open(rename, 'r+') as f:
+#            f.readline()
+#            for line in f:
+#                line = sample + args.delim + line
