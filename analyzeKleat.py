@@ -570,8 +570,6 @@ if __name__ == "__main__":
             writeFile(args.outdir, 'kallisto.index.o', o)
             writeFile(args.outdir, 'kallisto.index.e', e)
 
-    sys.exit()
-
     for i in xrange(len(config['r1s'])):
         sample = config['kleats'][i].split('.')[0]
         quant = kallistoQuant(args.kallisto, index_path, args.outdir, config['r1s'][i], config['r2s'][i], bias=args.bias, bootstrap=args.bootstrap, threads=args.threads)
