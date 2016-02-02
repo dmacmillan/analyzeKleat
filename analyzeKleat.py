@@ -555,25 +555,29 @@ if __name__ == "__main__":
     utr3_regions = genTrackLine('3\'UTRs', description='3\'UTR sequences', color='50,50,255') + utr3_regions
     if args.debug:
         print 'DONE'
-    if args.debug:
-        sys.stdout.write('Generating sponge sequences...')
-    sponge_fasta, sponge_regions = genSponge(sponges, reference)
-    sponge_regions = genTrackLine('Sponge', description='non 3\'utr sequences', color='0,100,0') + sponge_regions
-    if args.debug:
-        print 'DONE'
+    # (2016-02-02) Remove sponges temporarily as per discussion with Readman
+#    if args.debug:
+#        sys.stdout.write('Generating sponge sequences...')
+#    sponge_fasta, sponge_regions = genSponge(sponges, reference)
+#    sponge_regions = genTrackLine('Sponge', description='non 3\'utr sequences', color='0,100,0') + sponge_regions
+#    if args.debug:
+#        print 'DONE'
     
     utr3_intervals_path = os.path.join(args.outdir, 'utr3_intervals')
-    sponge_regions_path = os.path.join(args.outdir, 'sponge_regions.bed')
+    # (2016-02-02) Remove sponges temporarily as per discussion with Readman
+    #sponge_regions_path = os.path.join(args.outdir, 'sponge_regions.bed')
     utr3_fasta_path = os.path.join(args.outdir, 'utr3_regions.fa')
     utr3_regions_path = os.path.join(args.outdir, 'utr3_regions.bed')
-    writeFile(utr3_fasta_path, None, utr3_fasta, sponge_fasta)
+    # (2016-02-02) Remove sponges temporarily as per discussion with Readman
+    #writeFile(utr3_fasta_path, None, utr3_fasta, sponge_fasta)
+    #writeFile(sponge_regions_path, None, sponge_regions)
+    writeFile(utr3_fasta_path, None, utr3_fasta)
     writeFile(utr3_regions_path, None, utr3_regions)
-    writeFile(sponge_regions_path, None, sponge_regions)
     writeFile(utr3_intervals_path, None, utr3_intervals)
     if args.debug:
         print '3\'UTR fasta file written to: {}'.format(utr3_fasta_path)
         print '3\'UTR regions file written to: {}'.format(utr3_regions_path)
-        print 'Sponge regions file written to: {}'.format(sponge_regions_path)
+        #print 'Sponge regions file written to: {}'.format(sponge_regions_path)
 
     if args.debug:
         print 'samtools faidx {}...'.format(utr3_fasta_path)
