@@ -152,7 +152,7 @@ def parse_gene_names(gene_names):
             results[tid] = gene
     return results
 
-def parseGTF(gtffile, sources=None, features=None , gzipped=False, add_chr=True):
+def parseGTF(gtffile, sources=None, features=None , not_sources=None, not_features=None, gzipped=False, add_chr=True):
     results = []
     if gzipped:
         f = gzip.open(gtffile, 'rb')
@@ -168,6 +168,10 @@ def parseGTF(gtffile, sources=None, features=None , gzipped=False, add_chr=True)
         for attr in [x.split() for x in gtf.attribute.split(';')][:-1]:
             attributes[attr[0]] = attr[1][1:-1]
         gtf.attribute = attributes
+        if not_sources and gtf.source in not_sources:
+            continue
+        elif not_features and gtf.feature in not_features:
+            continue
         if sources and gtf.source not in sources:
             continue
         elif features and gtf.feature not in features:
@@ -256,8 +260,12 @@ def genFa(clusters, gtf, ref, min_len=20, cap_size=100, delim='|'):
             if gene not in clusters[chrom]:
                 continue
             strand = gtf[chrom][gene][0].strand
+            cleaved = False
+#            for i in xrange(len(gtf[chrom][gene])-1):
+#                d = gtf[chrom][gene][i+1].start - gtf[chrom][gene][i].end
+#                if d > 5000:
+#                    print gene
             for region in gtf[chrom][gene]:
-                cleaved = False
                 last = region.start
                 for kleat in clusters[chrom][gene]:
                     cs = kleat.cleavage_site
@@ -265,29 +273,29 @@ def genFa(clusters, gtf, ref, min_len=20, cap_size=100, delim='|'):
                         continue
                     if last < cs <= region.end:
                         cleaved = True
-                        result += (delim).join(['>utr3', gene, chrom, str(last), str(cs)]) + '\n'
+                        result += (delim).join(['>utr3', gene, strand, chrom, str(last), str(cs)]) + '\n'
                         result += reference.fetch(chrom, last, cs).upper() + '\n'
                         regions += ('\t').join([chrom, str(last), str(cs), gene, '0', strand]) + '\n'
                         intervals += ('\t').join([(delim).join(['utr3', gene, chrom, str(last), str(cs)]), '1', str(cs-last), strand]) + '\n'
                         last = cs+1
                 if (region.end - last >= min_len) and cleaved:
-                    result += (delim).join(['>utr3', gene, chrom, str(last), str(region.end)]) + '\n'
+                    result += (delim).join(['>utr3', gene, strand, chrom, str(last), str(region.end)]) + '\n'
                     result += reference.fetch(chrom, last, region.end).upper() + '\n'
                     regions += ('\t').join([chrom, str(last), str(region.end), gene, '0', strand]) + '\n'
                     intervals += ('\t').join([(delim).join(['utr3', gene, chrom, str(last), str(region.end)]), '1', str(region.end-last), strand]) + '\n'
             # Capture window after/before end of utr3
-            if strand == '+':
+            if strand == '+' and cleaved:
                 last_exon = gtf[chrom][gene][-1]
-                result += (delim).join(['>utr3', gene, last_exon.seqname, str(last_exon.end), str(last_exon.end + cap_size)]) + '\n'
+                result += (delim).join(['>cap3', gene, strand, last_exon.seqname, str(last_exon.end), str(last_exon.end + cap_size)]) + '\n'
                 result += reference.fetch(last_exon.seqname, last_exon.start, last_exon.end + cap_size).upper() + '\n'
                 regions += ('\t').join([last_exon.seqname, str(last_exon.end), str(last_exon.end + cap_size), gene, '0', strand]) + '\n'
-                intervals += ('\t').join([(delim).join(['utr3', gene, last_exon.seqname, str(last_exon.end), str(last_exon.end + cap_size)]), '1', '100', strand]) + '\n'
-            else:
+                intervals += ('\t').join([(delim).join(['cap3', gene, last_exon.seqname, str(last_exon.end), str(last_exon.end + cap_size)]), '1', str(cap_size), strand]) + '\n'
+            elif strand == '-' and cleaved:
                 last_exon = gtf[chrom][gene][0]
-                result += (delim).join(['>cap3', gene, last_exon.seqname, str(last_exon.start - cap_size), str(last_exon.start)]) + '\n'
+                result += (delim).join(['>cap3', gene, strand, last_exon.seqname, str(last_exon.start - cap_size), str(last_exon.start)]) + '\n'
                 result += reference.fetch(last_exon.seqname, last_exon.start - cap_size, last_exon.end).upper() + '\n'
                 regions += ('\t').join([last_exon.seqname, str(last_exon.start - cap_size), str(last_exon.start), gene, '0' , strand]) + '\n'
-                intervals += ('\t').join([(delim).join(['cap3', gene, last_exon.seqname, str(last_exon.start - cap_size), str(last_exon.start)]), '1', '100', strand]) + '\n'
+                intervals += ('\t').join([(delim).join(['cap3', gene, last_exon.seqname, str(last_exon.start - cap_size), str(last_exon.start)]), '1', str(cap_size), strand]) + '\n'
     return result.strip(), regions.strip(), intervals.strip()
                 
 def writeFile(path, name=None, *lines):
@@ -306,7 +314,7 @@ def kallistoIndex(kallisto_path, fasta_path):
     return index
 
 def writeKallistoQuant(kallisto_path, index_path, out_path, reads_1, reads_2, bias=False, bootstrap=None, threads=None):
-    expression_command = [kallisto_path, 'quant', '-i', index_path]
+    expression_command = [kallisto_path, 'quant', '-i', index_path, '--pseudobam']
     if bias:
         expression_command.append('--bias')
     if bootstrap:
@@ -316,8 +324,8 @@ def writeKallistoQuant(kallisto_path, index_path, out_path, reads_1, reads_2, bi
     expression_command += ['-o', out_path, reads_1, reads_2]
     return (' ').join(expression_command)
 
-def kallistoQuant(kallisto_path, index_path, out_path, reads_1, reads_2, bias=False, bootstrap=None, threads=None):
-    expression_command = [kallisto_path, 'quant', '-i', index_path]
+def kallistoQuant(kallisto_path, index_path, out_path, reads_1, reads_2, bias=False, bootstrap=None, threads=None, stdout=None):
+    expression_command = [kallisto_path, 'quant', '-i', index_path, '--pseudobam']
     if bias:
         expression_command.append('--bias')
     if bootstrap:
@@ -325,7 +333,10 @@ def kallistoQuant(kallisto_path, index_path, out_path, reads_1, reads_2, bias=Fa
     if threads:
         expression_command += ['-t', threads]
     expression_command += ['-o', out_path, reads_1, reads_2]
-    expression = subprocess.Popen(expression_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if not stdout:
+        expression = subprocess.Popen(expression_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    else:
+        expression = subprocess.Popen(expression_command, stdout=stdout, stderr=subprocess.PIPE)
     return expression
 
 def indexFa(fasta_path):
@@ -356,7 +367,7 @@ def genSponge(gtf, reference, delim='|'):
         if (line in used) or (region.seqname not in valid_chroms) or (region.end <= region.start):
             continue
         used.add(line)
-        header = (delim).join(['>sponge', region.attribute['gene_name'], region.seqname, str(region.start), str(region.end), '0', region.strand])
+        header = (delim).join(['>sponge', region.attribute['gene_name'], region.strand, region.seqname, str(region.start), str(region.end)])
         result.append(header)
         result.append(reference.fetch(region.seqname, region.start, region.end).upper())
         regions.append(line)
@@ -461,6 +472,7 @@ if __name__ == "__main__":
     parser.add_argument('-mbrtl', '--min_bridge_read_tail_len', type=int, default=2, help='Disregard KLEAT calls which have a maximum bridge read tail length less than this number. Default is 2')
     parser.add_argument('-mnbr', '--min_num_bridge_reads', type=int, default=2, help='Disregard KLEAT calls which have a number of bridge reads less than this number. Default is 2')
     parser.add_argument('-o', '--outdir', default=os.getcwd(), help='Directory to output to. Default is current directory')
+    parser.add_argument('-nq', '--no_quant', action='store_true', help='Set this flag to skip Kallisto quant phase')
 
     args = parser.parse_args()
 
@@ -513,7 +525,8 @@ if __name__ == "__main__":
         print 'DONE'
     if args.debug:
         sys.stdout.write('Parsing sponge sequences...')
-    sponges = parseGTF(args.features, sources=['protein_coding'], features='CDS')
+    #sponges = parseGTF(args.features, sources=['protein_coding'], features='CDS')
+    sponges = parseGTF(args.features, not_sources=['protein_coding'], not_features='UTR')
     if args.debug:
         print 'DONE'
     if args.debug:
@@ -570,18 +583,18 @@ if __name__ == "__main__":
             writeFile(args.outdir, 'kallisto.index.o', o)
             writeFile(args.outdir, 'kallisto.index.e', e)
 
+    if args.no_quant:
+        sys.exit()
+
     for i in xrange(len(config['r1s'])):
         sample = config['kleats'][i].split('.')[0]
+        sam_path = os.path.join(args.outdir, 'alignment.sam')
         quant = kallistoQuant(args.kallisto, index_path, args.outdir, config['r1s'][i], config['r2s'][i], bias=args.bias, bootstrap=args.bootstrap, threads=args.threads)
         if args.debug:
             print 'Quantifying...'
         quant = quant.communicate()
         if args.debug:
             print 'DONE'
-        abundance_path = os.path.join(args.outdir, 'abundance.tsv')
+        tsv_path = os.path.join(args.outdir, 'abundance.tsv')
         rename = os.path.join(args.outdir, os.path.basename(config['kleats'][i]).split('.')[0] + '.tsv')
-        os.rename(abundance_path, rename)
-#        with open(rename, 'r+') as f:
-#            f.readline()
-#            for line in f:
-#                line = sample + args.delim + line
+        os.rename(tsv_path, rename)
