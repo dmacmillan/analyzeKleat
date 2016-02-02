@@ -334,8 +334,10 @@ def writeKallistoQuant(kallisto_path, index_path, out_path, reads_1, reads_2, bi
     expression_command += ['-o', out_path, reads_1, reads_2]
     return (' ').join(expression_command)
 
-def kallistoQuant(kallisto_path, index_path, out_path, reads_1, reads_2, bias=False, bootstrap=None, threads=None, stdout=None):
-    expression_command = [kallisto_path, 'quant', '-i', index_path, '--pseudobam']
+def kallistoQuant(kallisto_path, index_path, out_path, reads_1, reads_2, pseudobam=True, bias=False, bootstrap=None, threads=None, stdout=None):
+    expression_command = [kallisto_path, 'quant', '-i', index_path]
+    if pseudobam:
+        expression_command.append('--pseudobam')
     if bias:
         expression_command.append('--bias')
     if bootstrap:
@@ -343,6 +345,8 @@ def kallistoQuant(kallisto_path, index_path, out_path, reads_1, reads_2, bias=Fa
     if threads:
         expression_command += ['-t', threads]
     expression_command += ['-o', out_path, reads_1, reads_2]
+    if args.debug:
+        print 'Kallisto quant command:\n{}'.format(' '.join(expression_command))
     if not stdout:
         expression = subprocess.Popen(expression_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     else:
@@ -475,6 +479,7 @@ if __name__ == "__main__":
     parser.add_argument('-d', '--debug', action='store_true', help='Print detailed debugging information')
     parser.add_argument('-m', '--min_seq_len', type=int, default=20, help='The minimum length of sequence to be output in the fasta file. Default is 20')
     #parser.add_argument('-n', '--name', default=None, help='Name for dataset. Default will be the basename of all -ks arguments delimited by the --delim parameter.')
+    parser.add_argument('-p', '--pseudobam', action='store_false', help='Pseudobam parameter for Kallisto, enabled by default. Use this flag to disable')
     parser.add_argument('-bi', '--bias', action='store_false', help='Bias parameter for Kallisto, enabled by default. Use this flag to disable')
     parser.add_argument('-bo', '--bootstrap', default='100', help='Bootstrap parameter for Kallisto. Default = 100')
     parser.add_argument('-t', '--threads', default='8', help='Number of threads to use for Kallisto. Default = 8')
@@ -605,14 +610,17 @@ if __name__ == "__main__":
         sample_path = os.path.join(args.outdir, sample)
         os.mkdir(sample_path)
         sam_path = os.path.join(sample_path, 'alignment.sam')
-        sam_file = open(sam_path, 'w')
-        quant = kallistoQuant(args.kallisto, index_path, sample_path, config['r1s'][i], config['r2s'][i], bias=args.bias, bootstrap=args.bootstrap, threads=args.threads, stdout=sam_file)
+        sam_file = None
+        if args.pseudobam:
+            sam_file = open(sam_path, 'w')
+        quant = kallistoQuant(args.kallisto, index_path, sample_path, config['r1s'][i], config['r2s'][i], bias=args.bias, bootstrap=args.bootstrap, threads=args.threads, stdout=sam_file, pseudobam=args.pseudobam)
         if args.debug:
             print 'Quantifying...'
         quant = quant.communicate()
         if args.debug:
             print 'DONE'
-        sam_file.close()
+        if args.pseudobam:
+            sam_file.close()
 #        tsv_path = os.path.join(args.outdir, 'abundance.tsv')
 #        rename = os.path.join(args.outdir, os.path.basename(config['kleats'][i]).split('.')[0] + '.tsv')
 #        os.rename(tsv_path, rename)
