@@ -274,7 +274,7 @@ def genFa(clusters, gtf, ref, min_len=20, cap_size=100, delim='|'):
                     gtf[chrom][gene] = gtf[chrom][gene][clip+1:]
                 else:
                     gtf[chrom][gene] = gtf[chrom][gene][:clip+1]
-                print [[x.start, x.end] for x in gtf[chrom][gene]]
+                #print [[x.start, x.end] for x in gtf[chrom][gene]]
             for region in gtf[chrom][gene]:
                 last = region.start
                 for kleat in clusters[chrom][gene]:
@@ -601,14 +601,18 @@ if __name__ == "__main__":
         sys.exit()
 
     for i in xrange(len(config['r1s'])):
-        sample = config['kleats'][i].split('.')[0]
-        sam_path = os.path.join(args.outdir, 'alignment.sam')
-        quant = kallistoQuant(args.kallisto, index_path, args.outdir, config['r1s'][i], config['r2s'][i], bias=args.bias, bootstrap=args.bootstrap, threads=args.threads)
+        sample = os.path.basename(config['kleats'][i]).split('.')[0]
+        sample_path = os.path.join(args.outdir, sample)
+        os.mkdir(sample_path)
+        sam_path = os.path.join(sample_path, 'alignment.sam')
+        sam_file = open(sam_path, 'w')
+        quant = kallistoQuant(args.kallisto, index_path, sample_path, config['r1s'][i], config['r2s'][i], bias=args.bias, bootstrap=args.bootstrap, threads=args.threads, stdout=sam_file)
         if args.debug:
             print 'Quantifying...'
         quant = quant.communicate()
         if args.debug:
             print 'DONE'
-        tsv_path = os.path.join(args.outdir, 'abundance.tsv')
-        rename = os.path.join(args.outdir, os.path.basename(config['kleats'][i]).split('.')[0] + '.tsv')
-        os.rename(tsv_path, rename)
+        sam_file.close()
+#        tsv_path = os.path.join(args.outdir, 'abundance.tsv')
+#        rename = os.path.join(args.outdir, os.path.basename(config['kleats'][i]).split('.')[0] + '.tsv')
+#        os.rename(tsv_path, rename)
