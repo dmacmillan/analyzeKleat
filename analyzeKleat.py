@@ -294,13 +294,13 @@ def genFa(clusters, gtf, ref, min_len=20, cap_size=100, delim='|'):
                     regions += ('\t').join([chrom, str(last), str(region.end), gene, '0', strand]) + '\n'
                     intervals += ('\t').join([(delim).join(['utr3', gene, chrom, str(last), str(region.end)]), '1', str(region.end-last), strand]) + '\n'
             # Capture window after/before end of utr3
-            if strand == '+' and cleaved:
+            if (strand == '+') and cleaved:
                 last_exon = gtf[chrom][gene][-1]
                 result += (delim).join(['>cap3', gene, strand, last_exon.seqname, str(last_exon.end), str(last_exon.end + cap_size)]) + '\n'
                 result += reference.fetch(last_exon.seqname, last_exon.start, last_exon.end + cap_size).upper() + '\n'
                 regions += ('\t').join([last_exon.seqname, str(last_exon.end), str(last_exon.end + cap_size), gene, '0', strand]) + '\n'
                 intervals += ('\t').join([(delim).join(['cap3', gene, last_exon.seqname, str(last_exon.end), str(last_exon.end + cap_size)]), '1', str(cap_size), strand]) + '\n'
-            elif strand == '-' and cleaved:
+            elif (strand == '-') and cleaved:
                 last_exon = gtf[chrom][gene][0]
                 result += (delim).join(['>cap3', gene, strand, last_exon.seqname, str(last_exon.start - cap_size), str(last_exon.start)]) + '\n'
                 result += reference.fetch(last_exon.seqname, last_exon.start - cap_size, last_exon.end).upper() + '\n'
@@ -479,7 +479,7 @@ if __name__ == "__main__":
     parser.add_argument('-d', '--debug', action='store_true', help='Print detailed debugging information')
     parser.add_argument('-m', '--min_seq_len', type=int, default=20, help='The minimum length of sequence to be output in the fasta file. Default is 20')
     #parser.add_argument('-n', '--name', default=None, help='Name for dataset. Default will be the basename of all -ks arguments delimited by the --delim parameter.')
-    parser.add_argument('-p', '--pseudobam', action='store_false', help='Pseudobam parameter for Kallisto, enabled by default. Use this flag to disable')
+    parser.add_argument('-p', '--pseudobam', action='store_false', help='Pseudobam parameter for Kallisto, enabled by default. Use this flag to disable. This parameter will override the threads parameter since Kallisto cannot generate a pseudobam on multiple threads.')
     parser.add_argument('-bi', '--bias', action='store_false', help='Bias parameter for Kallisto, enabled by default. Use this flag to disable')
     parser.add_argument('-bo', '--bootstrap', default='100', help='Bootstrap parameter for Kallisto. Default = 100')
     parser.add_argument('-t', '--threads', default='8', help='Number of threads to use for Kallisto. Default = 8')
@@ -490,6 +490,9 @@ if __name__ == "__main__":
     parser.add_argument('-nq', '--no_quant', action='store_true', help='Set this flag to skip Kallisto quant phase')
 
     args = parser.parse_args()
+
+    if args.pseudobam:
+        args.threads = None
 
     config = parseConfig(args.config)
 
@@ -520,11 +523,11 @@ if __name__ == "__main__":
     for chrom in grouped:
         for gene in grouped[chrom]:
             sites = grouped[chrom][gene]
-            if args.debug:
-                print 'Clustering {} {} {}'.format(chrom, gene, [x.cleavage_site for x in sites])
+#            if args.debug:
+#                print 'Clustering {} {} {}'.format(chrom, gene, [x.cleavage_site for x in sites])
             sites = kleatLinkage(sites, args.cluster_window)
-            if args.debug:
-                print [x.cleavage_site for x in sites]
+#            if args.debug:
+#                print [x.cleavage_site for x in sites]
 
     # Global stuff
     # Parse gene names
@@ -538,12 +541,13 @@ if __name__ == "__main__":
     gtf = parseGTF(args.features, sources=['protein_coding'], features='UTR')
     if args.debug:
         print 'DONE'
-    if args.debug:
-        sys.stdout.write('Parsing sponge sequences...')
+    # (2016-02-02) Remove sponges temporarily as per discussion with Readman
+    #if args.debug:
+    #    sys.stdout.write('Parsing sponge sequences...')
     #sponges = parseGTF(args.features, sources=['protein_coding'], features='CDS')
-    sponges = parseGTF(args.features, not_sources=['protein_coding'], not_features='UTR')
-    if args.debug:
-        print 'DONE'
+    #sponges = parseGTF(args.features, not_sources=['protein_coding'], not_features='UTR')
+    #if args.debug:
+    #    print 'DONE'
     if args.debug:
         sys.stdout.write('Grouping 3\'UTRs...')
     ggtf = groupGTF(gtf)
@@ -616,7 +620,9 @@ if __name__ == "__main__":
         quant = kallistoQuant(args.kallisto, index_path, sample_path, config['r1s'][i], config['r2s'][i], bias=args.bias, bootstrap=args.bootstrap, threads=args.threads, stdout=sam_file, pseudobam=args.pseudobam)
         if args.debug:
             print 'Quantifying...'
-        quant = quant.communicate()
+        qo,qe = quant.communicate()
+        #writeFile(sample_path, 'kallisto.quant.o', qo)
+        writeFile(sample_path, 'kallisto.quant.e', qe)
         if args.debug:
             print 'DONE'
         if args.pseudobam:
