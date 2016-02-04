@@ -266,15 +266,14 @@ def genFa(clusters, gtf, ref, min_len=20, cap_size=100, delim='|'):
                 d = gtf[chrom][gene][i+1].start - gtf[chrom][gene][i].end
                 if d > 3000:
                     clip = i
-#                    print gene
-#                    print clip
-#                    print [[x.start, x.end] for x in gtf[chrom][gene]]
-            if clip or clip == 0:
+                    break
+            if clip is not None:
                 if strand == '+':
                     gtf[chrom][gene] = gtf[chrom][gene][clip+1:]
                 else:
                     gtf[chrom][gene] = gtf[chrom][gene][:clip+1]
-                #print [[x.start, x.end] for x in gtf[chrom][gene]]
+#            for i in gtf[chrom][gene]:
+#                print '{}\t{}'.format(i.start, i.end)
             for region in gtf[chrom][gene]:
                 last = region.start
                 for kleat in clusters[chrom][gene]:
